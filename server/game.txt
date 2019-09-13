@@ -1,0 +1,116 @@
+How the Game class works:
+
+The Game class is instantiated once on every gameserver.
+It holds the game state. The game state is the full state needed to play the game. This is only kept on the server and is never sent to players.
+For example, in CAH, the full state is:
+- The cards in every player's hand
+- The current black card
+- The cards each player has played
+- Who is the Card Czar
+- Each player's score
+
+The general signature of the Game class's game-state-related functions is as follows:
+
+```ts
+class Game<TGameState, TProjectedState, TMethods> {
+    protected getState(): Promise<TGameState>;
+    protected setState(updater: (state: TGameState) => Partial<TGameState | null>);
+}
+```
+
+To set the game state, the Game must call `this.setState` with an updater function - the updater is necessary because the order of method calls (explained below), and thus state updates, is not guaranteed - it must return a version of the *current* game state. It MUST be a pure function. (See the end of this document for a reference implementation.)
+
+The game can receive actions from players, in the form of RPC method calls.
+
+The game also sends each player a view of the game state, known as the "projected state".
+This varies from player to player.
+For example, in CAH, each player's projected state is:
+- The cards in *their* hand
+- Whether they've already played a card, and, if so, which one
+- Whether the other players have each played a card (but not revealing which one it is, unless the card czar is choosing)
+- Who is the Card Czar
+- Each player's score
+
+The game state is "projected" by the `project` method on the Game object. It has the signature:
+
+```ts
+class Game<TGameState, TProjectedState, TMethods> {
+    public project(gameStateL TGameState, playerId: string): TProjectedState;
+}
+```
+
+It MAY NOT have any side effects - it cannot call `setState` or modify any other state. It must be a pure function of the game state and the player ID. 
+
+It also cannot rely on any internal caches, only the gameState object it is passed. This is because the Game object may be instantiated on more than one gameserver - so the server which processed the method call may not be the one that projects the state. The `getState` method, however, is guaranteed to return a consistent view of the state. (In an ideal world, project would be marked static to make this impossible, but abstract static methods are not permitted.)
+
+The general flow is this:
+1. A player takes an action. Their client calls a method on the Game object on the server.
+2. The server executes the action, potentially modifying the global state.
+3. If the global state is modified:
+3. 1. For each player connected to the game, call Game.projectState(playerId).
+3. 2. Send the player a `projectedStateUpdate` event with the new projected state.
+
+A sample implementation follows. (Note: this is not a complete implementation - it only represents one action, `playCard`.)
+
+```ts
+type PlayerID = string;
+type CardID = string;
+interface CAHGameState {
+    state: "playing" | "choosing";
+    playerHands: { [playerId: PlayerId]: CardID[] };
+    playerPlayedCards: { [playerId: PlayerId]: CardID | null; };
+    cardCzar: PlayerID;
+    blackCard: CardId;
+}
+interface CAHProjectedState {
+    state: "playing" | "choosing";
+    ourHand: CardID[];
+    playerPlayedCards: { [playerId: PlayerId]: boolean }; // Note that we don't tell the other players what one played, only whether they played one or not.
+    cardCzar: PlayerID;
+    blackCard: CardId;
+}
+interface CAHMethods extends GameMethodArgs {
+    playCard: { card: CardID };
+}
+class CAHGame extends Game {
+    initialize() {
+        return {
+            state: "playing",
+            playerHands: this.dealCards(),
+            playerPlayedCards: zip(this.getPlayers(), Array(this.getPlayers().length).map(_ => null)),
+            cardCzar: this.chooseRandomPlayer(),
+            blackCard: this.chooseRandomBlackCard()
+        };
+    }
+
+    project(state: CAHGameState, playerId: string) {
+        return {
+            state: state.state, // ha ha
+            cardCzar: state.cardCzar,
+            blackCard: state.blackCard,
+            ourHand: state.playerHands[playerId],
+            playerPlayedCards: zip(this.getPlayers(), this.getPlayers().map(x => state.playerPlayedCards[x] !== null))
+        };
+    }
+
+    call(state, method, playerId, args) {
+        switch (method) {
+            case "playCard":
+                if (state.state !== "playing") {
+                    throw new NotAllowedException("not_playing");
+                }
+                if (state.playerPlayedCards[playerId] !== null) {
+                    throw new NotAllowedException("already_played");
+                }
+                return {
+                    ...state,
+                    playerPlayedCards: {
+                        ...state.playerPlayedCards,
+                        [playerId]: args.cardID
+                    };
+                };
+            default: throw new Error();
+        }
+    }
+}
+```

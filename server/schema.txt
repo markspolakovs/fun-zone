@@ -1,0 +1,73 @@
+id:lobbies KEY int
+    Atomic counter for lobby IDs
+
+lobbies:{id}:settings KEY json
+    The lobby's settings.
+    {
+        "game": "cah"
+    }
+
+lobbies SET
+    The set of lobby IDs that are currently active
+
+lobbies:{id}:players HASH
+    Key: the player ID (NOT THE SID)
+    Value: JSON
+        {
+            "id": 1,
+            "name": "Marks",
+            "rtcConnectionString": "[opaque]",
+            "isHost": true,
+            "isReady": false,
+            "isConnected": true
+        }
+
+id:lobbies:{id}:player KEY int
+    Atomic counter for a lobby's player IDs
+
+sessions HASH
+    Mapping from a player's SID to a tuple [lobby_id, player_id]
+    Encoded as a string, separated by a /
+    For example, "deadbeef" => "123/456"
+    where deadbeef is the SID, 123 is the lobby ID, and 456 is the player ID
+
+lobbyCodes HASH
+    Mapping from a lobby code to its ID.
+    Lobby codes are four-character strings generated for people to type in.
+    They are non-sequential and unguessable.
+
+sids SET
+    All currently assigned session IDs, to ensure uniqueness
+
+lobbies:{id}:game_state KEY json
+    opaque
+
+# Pub/Sub:
+
+lobbies:{id}/lobby_settings_changed PUBSUB
+    Event Type: JSON
+    A partial of the lobby's new settings.
+
+lobbies:{id}/player_joined PUBSUB
+    Event Type: JSON
+    As in "lobbies:{id}:players"
+
+lobbies:{id}/player_left PUBSUB
+    Event Type: string
+    The ID of the player that left.
+
+lobbies:{id}/player_update PUBSUB
+    Event Type: JSON
+    The new date of the player - the `id` field must be included
+
+lobbies:{id}/game_starting PUBSUB
+    Event Type: none
+    The game is starting. Expect a game_state_update with the initial state.
+
+lobbies:{id}/game_state_update PUBSUB
+    Event Type: JSON.
+    The new game state.
+
+lobbies:{id}/game_ended PUBSUB
+    Event Type: none
+    The game ended.

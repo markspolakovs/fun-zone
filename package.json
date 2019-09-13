@@ -1,0 +1,18 @@
+{
+  "name": "cards",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "powershell -file Ensure-Redis.ps1 && concurrently --names \"SERVER,CLIENT\" --handle-input \"cd server && yarn dev\" \"cd client && yarn dev\""
+  },
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "devDependencies": {
+    "concurrently": "^4.1.2"
+  }
+}
