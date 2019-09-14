@@ -4,7 +4,12 @@ import { Lobby } from "../../lobby";
 import { Player } from "../../interfaces";
 import { range } from "lodash";
 import { createClient as mockCreateClient } from "redis-mock";
-import { NotAllowedException, UnknownMethodException } from "../gameState";
+import {
+  NotAllowedException,
+  UnknownMethodException,
+  EngineActions
+} from "../gameState";
+import { cards } from "@cards/shared/src/cah/cards";
 jest.mock("redis", () => ({
   createClient: jest.fn((...args) => mockCreateClient(...args))
 }));
@@ -92,7 +97,7 @@ test("Initial state is set up correctly", () => {
   expect(state.discards).toContain("73"); // smoke - black
 });
 
-describe("CAH state", () => {
+describe("CAH", () => {
   let game: CAHGame;
   let state: CAHGameState;
   beforeEach(() => {
@@ -102,171 +107,246 @@ describe("CAH state", () => {
     game.debug_seedRandom(12345);
     state = game.initialize();
     (game as any).callbacksThisLoop = [];
+    state.blackCard = "58";
   });
 
-  it("throws if an unknown method is called", () => {
-    expect(() => {
-      game.update(state, "0", Symbol(), {});
-    }).toThrowError(UnknownMethodException);
-  });
-
-  describe("playCard", () => {
-    it("throws if state is not playing", () => {
-      state.state = "choosing";
-      expect(() => {
-        game.update(state, "0", "playCard", { cardId: "18" });
-      }).toThrow(NotAllowedException);
-    });
-
-    it("throws if we play a card we do not have in our hand", () => {
-      expect(() => {
-        game.update(state, "0", "playCard", { cardId: "NOT_A_REAL_CARD" });
-      }).toThrow(NotAllowedException);
-    });
-
-    it("throws if we have already played a card", () => {
-      state.playerPlayedCards[0] = "18";
-      state.playerHands[0].splice(state.playerHands[0].indexOf("18"), 1);
-      expect(() => {
-        game.update(state, "0", "playCard", { cardId: "18" });
-      }).toThrow(NotAllowedException);
-    });
-
-    it("works in the normal case", () => {
-      const newState = game.update(state, "0", "playCard", { cardId: "18" });
-      expect(newState.playerPlayedCards["0"]).toBe("18");
-      expect(newState.playerHands["0"]).toHaveLength(6);
-      expect(newState.playerHands["0"]).not.toContain("18");
-    });
-
-    it("transitions to choosing state if we are the last player", () => {
-      state.playerPlayedCards = {
-        "0": null,
-        "1": "244",
-        "2": "70",
-        "3": "3"
+  describe("dealHand", () => {
+    it("resets the discards if we don't have enough cards", () => {
+      const dr = {
+        discards: cards.white.map(x => x.id)
       };
-      const newState = game.update(state, "0", "playCard", { cardId: "18" });
-      expect(newState.state).toBe("choosing");
+      const hand = (game as any).dealHand(dr, 7);
+      expect(hand).toHaveLength(7);
+      expect(dr.discards).toHaveLength(7);
     });
   });
 
-  describe("chooseWinner", () => {
-    it("only lets the card czar fire", () => {
+  describe("update()", () => {
+    it("throws if an unknown method is called", () => {
       expect(() => {
-        game.update(state, "0", "chooseWinner", { cardId: "244" });
-      }).toThrow(NotAllowedException);
-    });
-    it("throws if the state is not choosing", () => {
-      expect(() => {
-        game.update(state, "1", "chooseWinner", { cardId: "244" });
-      }).toThrow(NotAllowedException);
+        game.update(state, "0", Symbol(), {});
+      }).toThrowError(UnknownMethodException);
     });
 
-    it("throws if the chosen card was not actually played", () => {
-      state.state = "choosing";
-      state.playerPlayedCards = {
-        "0": "18",
-        "1": "244",
-        "2": "70",
-        "3": "3"
-      };
-      expect(() => {
-        game.update(state, "1", "chooseWinner", { cardId: "bollocks" });
-      }).toThrow(NotAllowedException);
-    });
-
-    it("transitions to waitingForNextRound", () => {
-      state.state = "choosing";
-      state.playerPlayedCards = {
-        "0": "18",
-        "1": "244",
-        "2": "70",
-        "3": "3"
-      };
-      const newState = game.update(state, "1", "chooseWinner", {
-        cardId: "244"
+    describe("playCard", () => {
+      it("handles undefined", () => {
+        expect(() => {
+          game.update(state, "0", "playCard", {});
+        }).toThrow("only_array_of_strings_please");
       });
-      expect(newState.state).toEqual("waitingForNextRound");
+      it("throws if state is not playing", () => {
+        state.state = "choosing";
+        expect(() => {
+          game.update(state, "0", "playCard", { cardId: "18" });
+        }).toThrow("not_playing");
+      });
+
+      it("throws if we play cards we do not have in our hand", () => {
+        expect(() => {
+          game.update(state, "0", "playCard", { cardIds: ["NOT_A_REAL_CARD"] });
+        }).toThrow("not_in_hand");
+      });
+
+      it("throws if we have already played a card", () => {
+        state.playerPlayedCards[0] = "18";
+        state.playerHands[0].splice(state.playerHands[0].indexOf("18"), 1);
+        expect(() => {
+          game.update(state, "0", "playCard", { cardIds: ["18"] });
+        }).toThrow("already_played");
+      });
+
+      it("only lets us play as many cards as the black card accepts", () => {
+        expect(() => {
+          game.update(state, "0", "playCard", { cardIds: ["18", "92"] });
+        }).toThrow("mismatched_count");
+        state.blackCard = "59";
+        expect(() => {
+          game.update(state, "0", "playCard", { cardIds: ["18"] });
+        }).toThrow("mismatched_count");
+      });
+
+      it("works in the normal case", () => {
+        const newState = game.update(state, "0", "playCard", {
+          cardIds: ["18"]
+        });
+        console.log(newState.playerPlayedCards["0"]);
+        expect(newState.playerPlayedCards["0"]).toStrictEqual(["18"]);
+        expect(newState.playerHands["0"]).toHaveLength(6);
+        expect(newState.playerHands["0"]).not.toContain("18");
+      });
+
+      it("handles multi-pick black cards", () => {
+        state.blackCard = "59";
+        const newState = game.update(state, "0", "playCard", {
+          cardIds: ["18", "92"]
+        });
+        expect(newState.playerPlayedCards["0"]).toStrictEqual(["18", "92"]);
+        expect(newState.playerHands["0"]).toHaveLength(5);
+        expect(newState.playerHands["0"]).not.toContain("18");
+        expect(newState.playerHands["0"]).not.toContain("92");
+      });
+
+      it("transitions to choosing state if we are the last player (excpet the CC)", () => {
+        state.playerPlayedCards = {
+          "0": null,
+          "1": null,
+          "2": "70",
+          "3": "3"
+        };
+        const newState = game.update(state, "0", "playCard", {
+          cardIds: ["18"]
+        });
+        expect(newState.state).toBe("choosing");
+      });
     });
 
-    it("increases the score properly", () => {
-      state.state = "choosing";
-      state.playerPlayedCards = {
-        "0": "18",
-        "1": "244",
-        "2": "70",
-        "3": "3"
-      };
-      const newState = game.update(state, "1", "chooseWinner", {
-        cardId: "244"
+    describe("chooseWinner", () => {
+      it("only lets the card czar fire", () => {
+        expect(() => {
+          game.update(state, "0", "chooseWinner", { cardIds: ["70"] });
+        }).toThrow(NotAllowedException);
       });
-      expect(newState.scores).toEqual({
-        "0": 0,
-        "1": 1,
-        "2": 0,
-        "3": 0
+      it("throws if the state is not choosing", () => {
+        expect(() => {
+          game.update(state, "1", "chooseWinner", { cardIds: ["70"] });
+        }).toThrow(NotAllowedException);
+      });
+
+      it("throws if the chosen card was not actually played", () => {
+        state.state = "choosing";
+        state.playerPlayedCards = {
+          "0": ["18"],
+          "1": null,
+          "2": ["70"],
+          "3": ["3"]
+        };
+        expect(() => {
+          game.update(state, "1", "chooseWinner", { cardIds: ["bollocks"] });
+        }).toThrow(NotAllowedException);
+      });
+
+      it("transitions to waitingForNextRound", () => {
+        state.state = "choosing";
+        state.playerPlayedCards = {
+          "0": ["18"],
+          "1": null,
+          "2": ["70"],
+          "3": ["3"]
+        };
+        const newState = game.update(state, "1", "chooseWinner", {
+          cardIds: ["70"]
+        });
+        expect(newState.state).toEqual("waitingForNextRound");
+      });
+
+      it("increases the score properly", () => {
+        state.state = "choosing";
+        state.playerPlayedCards = {
+          "0": ["18"],
+          "1": null,
+          "2": ["70"],
+          "3": ["3"]
+        };
+        const newState = game.update(state, "1", "chooseWinner", {
+          cardIds: ["70"]
+        });
+        expect(newState.scores).toEqual({
+          "0": 0,
+          "1": 0,
+          "2": 1,
+          "3": 0
+        });
+      });
+
+      it("schedules a callback for a state transition", () => {
+        (game as any).scheduleCallback = jest.fn();
+        state.state = "choosing";
+        state.playerPlayedCards = {
+          "0": ["18"],
+          "1": null,
+          "2": ["70"],
+          "3": ["3"]
+        };
+        game.update(state, "1", "chooseWinner", { cardIds: ["70"] });
+
+        expect((game as any).scheduleCallback).toHaveBeenCalledWith(
+          "newRound",
+          5000
+        );
       });
     });
 
-    it("schedules a callback for a state transition", () => {
-      (game as any).scheduleCallback = jest.fn();
-      state.state = "choosing";
-      state.playerPlayedCards = {
-        "0": "18",
-        "1": "244",
-        "2": "70",
-        "3": "3"
-      };
-      game.update(state, "1", "chooseWinner", { cardId: "244" });
+    describe("newRound callback", () => {
+      beforeEach(() => {
+        state.state = "choosing";
+        state.playerHands = {
+          "0": ["427", "408", "144", "59", "83", "92"],
+          "1": ["379", "261", "272", "436", "439", "211"],
+          "2": ["300", "422", "341", "170", "297", "337"],
+          "3": ["407", "442", "11", "131", "47", "179"]
+        };
+      });
+      it("resets state to playing", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        expect(newState.state).toEqual("playing");
+      });
+      it("refills all players' hands", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        lobby.players.forEach(player => {
+          expect(newState.playerHands[player.id]).toHaveLength(7);
+          // ensure they still have old cards
+          (state.playerHands[player.id] as string[]).forEach(old => {
+            expect(newState.playerHands[player.id]).toContain(old);
+          })
+        });
+      });
+      it("chooses a new black card", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        expect(newState.blackCard).not.toEqual(state.blackCard);
+      });
+      it("chooses a new card czar", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        expect(newState.cardCzar).toEqual("2");
+      });
+      it("increments the round", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        expect(newState.round).toEqual(2);
+      });
+      it("resets players' played cards", () => {
+        const newState = game.update(state, "SYSTEM", "newRound", {});
+        expect(newState.playerPlayedCards).toEqual({
+          "0": null,
+          "1": null,
+          "2": null,
+          "3": null
+        });
+      });
+    });
 
-      expect((game as any).scheduleCallback).toHaveBeenCalledWith(
-        "newRound",
-        5000
+    it("handles a new player joining", () => {
+      const newPlayerId = "HORSE";
+      const newPlayer = new Player();
+      newPlayer.id = newPlayerId;
+      const newState = game.update(
+        state,
+        newPlayerId,
+        EngineActions.playerJoined,
+        newPlayer
       );
-    });
-  });
-
-  describe("newRound callback", () => {
-    beforeEach(() => {
-      state.state = "choosing";
-      state.playerHands = {
-        "0": ["427", "408", "144", "59", "83", "92"],
-        "1": ["379", "261", "272", "436", "439", "211"],
-        "2": ["300", "422", "341", "170", "297", "337"],
-        "3": ["407", "442", "11", "131", "47", "179"]
-      };
-    });
-    it("resets state to playing", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      expect(newState.state).toEqual("playing");
-    });
-    it("refills all players' hands", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      lobby.players.forEach(player => {
-        expect(newState.playerHands[player.id]).toHaveLength(7);
-      });
-    });
-    it("chooses a new black card", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      expect(newState.blackCard).not.toEqual(state.blackCard);
-    });
-    it("chooses a new card czar", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      expect(newState.cardCzar).toEqual("2");
-    });
-    it("increments the round", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      expect(newState.round).toEqual(2);
-    });
-    it("resets players' hands", () => {
-      const newState = game.update(state, "SYSTEM", "newRound", {});
-      expect(newState.playerPlayedCards).toEqual({
-        "0": null,
-        "1": null,
-        "2": null,
-        "3": null
-      });
+      expect(newState.playerHands[newPlayerId]).toHaveLength(7);
+      expect(newState.playerHands[newPlayerId]).toMatchInlineSnapshot(`
+        Array [
+          "301",
+          "286",
+          "368",
+          "412",
+          "394",
+          "252",
+          "435",
+        ]
+      `);
+      expect(newState.playerPlayedCards[newPlayerId]).toEqual(null);
+      expect(newState.scores[newPlayerId]).toEqual(0);
     });
   });
 
@@ -325,21 +405,20 @@ describe("CAH state", () => {
     it("reveals played cards in the choosing state...", () => {
       state.playerPlayedCards = {
         "0": "18",
-        "1": "244",
+        "1": null,
         "2": "70",
         "3": "3"
       };
       state.state = "choosing";
       const projection = game.project(state, "0");
       expect(projection.allPlayerCards).toContain("18");
-      expect(projection.allPlayerCards).toContain("244");
       expect(projection.allPlayerCards).toContain("70");
       expect(projection.allPlayerCards).toContain("3");
     });
     test("... but not in the playing state", () => {
       state.playerPlayedCards = {
         "0": "18",
-        "1": "244",
+        "1": null,
         "2": "70",
         "3": "3"
       };

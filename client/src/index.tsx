@@ -1,15 +1,12 @@
 import "regenerator-runtime/runtime";
 import React, { useState, useEffect } from "react";
 import {
-  Accordion,
   Button,
   Segment,
-  AccordionPanel,
   Form
 } from "semantic-ui-react";
 import "semantic-ui-css/semantic.min.css";
 import ReactDOM from "react-dom";
-import { DebugConsole } from "./debugConsole";
 import { apiCall, ApiError } from "./api";
 import { Lobby } from "./lobby";
 
@@ -110,18 +107,28 @@ function App() {
   useEffect(() => {
     if (state === "ingame") {
       let search = window.location.search;
-      if (search.indexOf("sid=") > -1) {
+      console.log(search.indexOf("sid="));
+      if (search.indexOf("sid=") !== -1) {
         search = search.replace(/sid=.+($|&)/, `sid=${sid}`);
       } else {
         search = "?sid=" + sid;
       }
-      window.history.pushState({ sid }, "", window.location.href + search);
+      window.history.pushState(
+        { sid },
+        "",
+        window.location.origin + window.location.pathname + search
+      );
+      if (sessionStorage.getItem("NO_CACHE_SID") === null) {
+        sessionStorage.setItem("SID", sid);
+      }
     }
   }, [sid, state]);
 
   useEffect(() => {
     let sidMaybe;
-    if (window.history.state !== null && "sid" in window.history.state) {
+    if (sessionStorage.getItem("NO_CACHE_SID") === null && sessionStorage.getItem("SID") !== null) {
+      sidMaybe = sessionStorage.getItem("SID")!;
+    } else if (window.history.state !== null && "sid" in window.history.state) {
       sidMaybe = window.history.state.sid;
     } else if (window.location.search.indexOf("sid") > -1) {
       sidMaybe = window.location.search.match(/sid=(.+)(&|$|\?)/)![1];

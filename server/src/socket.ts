@@ -144,6 +144,8 @@ export default class GameSocket {
     });
     this.lobby.playerConnected(this.player.id);
     if (this.lobby.currentGame !== null) {
+      this.lobby.currentGame.subscribe(this.onGameStateUpdate);
+      console.log("SOCKET sending fresh state to new player");
       const state = await this.lobby.currentGame.getState();
       this.onGameStateUpdate(state);
     }
@@ -177,6 +179,7 @@ export default class GameSocket {
 
   private gameAction = async (opcode: string, args: any, opid?: string) => {
     try {
+      console.debug("SOCKET gameAction", opcode, args);
       await this.lobby!.currentGame!.callMethod(this.player!.id, opcode, args);
       this.sendEvent(SocketEvents.Ack, {}, opid);
     } catch (e) {
@@ -198,7 +201,9 @@ export default class GameSocket {
   };
 
   private onGameStateUpdate = async (state: any) => {
+    console.debug("SOCKET: gameStateUpdate");
     const projection = this.lobby!.currentGame!.project(state, this.player!.id);
+    console.log("projected", projection);
     this.sendEvent(SocketEvents.GameStateUpdate, projection);
   };
 
@@ -212,7 +217,7 @@ export default class GameSocket {
     this.lobby!.on("playerUpdated", player => {
       this.sendEvent(SocketEvents.LobbyPlayerUpdate, player);
     });
-    this.lobby!.on("gameStarted", () => {
+    this.lobby!.on("gameStarting", () => {
       this.sendEvent(SocketEvents.GameStarting, {});
       this.unsub = this.lobby!.currentGame!.subscribe(this.onGameStateUpdate);
     });

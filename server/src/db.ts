@@ -40,7 +40,7 @@ export default class Database {
         );
       },
       gameStarting: async (lobby: string) => {
-          await this.redis.publish(`lobbies:${lobby}/game_starting`, "{}");
+        await this.redis.publish(`lobbies:${lobby}/game_starting`, "{}");
       },
       gameEnded: async (lobby: string) => {
         await this.redis.publish(`lobbies:${lobby}/game_ended`, "{}");
@@ -180,18 +180,26 @@ export default class Database {
         throw new NotFoundException(`Lobby ${code} not exists`);
       }
 
-      const settingsJson = await this.redis.get(
-        `lobbies:${lobbyId}:settings`
-      );
+      const settingsJson = await this.redis.get(`lobbies:${lobbyId}:settings`);
       if (settingsJson === null) {
         throw new Error(`Lobby settings are null! ${lobbyId}`);
       }
       const settings = JSON.parse(settingsJson);
 
       return {
-          id: lobbyId,
-          settings
+        id: lobbyId,
+        settings
       };
+    },
+    doWeHaveAGameState: async (lobbyId: string) => {
+      return await this.redis.exists(`lobbies:${lobbyId}:game_state`);
+    },
+    getGameState: async (lobbyId: string) => {
+      const stateJson = await this.redis.get(`lobbies:${lobbyId}:game_state`);
+      if (stateJson === null) {
+        throw new Error(`No game state for ${lobbyId}!`);
+      }
+      return JSON.parse(stateJson);
     }
   };
 }

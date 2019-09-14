@@ -56,7 +56,9 @@ export function useRawGameSocket() {
   const sock = useRef<Socket | null>(null);
   const force = useForceUpdate();
   useEffect(() => {
-    sock.current = Engine("http://localhost:2000/engine.io");
+    sock.current = Engine("http://localhost:2000/engine.io", {
+      
+    });
     force();
   }, [force]);
   return sock.current;

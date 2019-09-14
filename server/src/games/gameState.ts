@@ -5,11 +5,7 @@ import { includes } from "lodash";
 
 export class GameException extends Error {
   constructor(public readonly code: string, message?: string) {
-    super(
-      `GameException [${code}]` + typeof message === "string"
-        ? ": " + message
-        : ""
-    );
+    super(typeof message === "string" ? `${code} (${message})` : code);
     this.name = "GameException[" + code + "]";
   }
 }
@@ -202,6 +198,7 @@ export abstract class Game<
   }
 
   private async listenForEvents() {
+    // console.debug("GAME subscribe");
     // We use the event bus for ALL state updates,
     // even for ones on this server.
     // See the comment at the end of this.update() for the explanation.
@@ -209,6 +206,7 @@ export abstract class Game<
     this.server.eventBus.subscribe(
       `lobbies:${this.lobby.id}/game_state_update`,
       data => {
+        // console.debug("GAME fire");
         const newState = JSON.parse(data);
         this.listeners.forEach(cb => cb(newState, this));
       }
@@ -264,14 +262,26 @@ export abstract class Game<
   }
 
   private hookIntoLobbyForPlayerUpdates() {
-    this.lobby.on("playerJoined", newPlayer => {
-      this.callMethod(newPlayer.id, EngineActions.playerJoined, newPlayer);
+    this.lobby.on("playerJoined", async newPlayer => {
+      try {
+        await this.callMethod(newPlayer.id, EngineActions.playerJoined, newPlayer);
+      } catch (e) {
+        console.warn("Error while handling playerJoined event", e);
+      }
     });
-    this.lobby.on("playerLeft", leaverId => {
-      this.callMethod(leaverId, EngineActions.playerJoined, {});
+    this.lobby.on("playerLeft", async leaverId => {
+      try {
+        await this.callMethod(leaverId, EngineActions.playerLeft, {});
+      } catch (e) {
+        console.warn("Error while handling playerLeft event", e);
+      }
     });
-    this.lobby.on("playerUpdated", updated => {
-      this.callMethod(updated.id, EngineActions.playerJoined, updated);
+    this.lobby.on("playerUpdated", async updated => {
+      try {
+        await this.callMethod(updated.id, EngineActions.playerUpdated, updated);
+      } catch (e) {
+        console.warn("Error while handling playerUpdated event", e);
+      }
     });
   }
 }

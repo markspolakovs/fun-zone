@@ -3,7 +3,7 @@ type CardID = string;
 export interface CAHGameState {
   state: "playing" | "choosing" | "waitingForNextRound";
   playerHands: { [playerId: string]: CardID[] };
-  playerPlayedCards: { [playerId: string]: CardID | null };
+  playerPlayedCards: { [playerId: string]: CardID[] | null };
   scores: { [playerId: string]: number };
   cardCzar: PlayerID;
   blackCard: CardID;
@@ -18,9 +18,9 @@ export interface CAHProjectedState {
   playerPlayedCards: { [playerId: string]: boolean }; // Note that we don't tell the other players what one played, only whether they played one or not.
   cardCzar: PlayerID;
   blackCard: CardID;
-  ourPlayedCard: CardID | null;
+  ourPlayedCard: CardID[] | null;
   round: number;
-  allPlayerCards: CardID[] | null;
+  allPlayerCards: CardID[][] | null;
   roundWinner: PlayerID | null;
 }
 

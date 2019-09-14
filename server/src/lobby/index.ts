@@ -14,8 +14,9 @@ interface LobbyEvents {
   playerJoined: Player;
   playerLeft: string;
   playerUpdated: Player;
-  gameStarted: void;
+  gameStarting: void;
   gameEnded: void;
+  gameStateUpdate: any;
 }
 
 type LobbyEmitter = StrictEventEmitter<EventEmitter, LobbyEvents>;
@@ -95,10 +96,10 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
       throw new NotReadyException();
     }
     // TODO support other games
-    this.server.DB.Lobbies.Events.gameStarting(this.id);
     this.currentGame = await Game.create(CAHGame as any, this.server, this, {
       gameLength: 10
     });
+    this.server.DB.Lobbies.Events.gameStarting(this.id);
     await (this.currentGame as any).doUpdate(() => {
       return this.currentGame!.initialize();
     }, true);
@@ -166,13 +167,15 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
               break;
             }
             case "game_starting": {
-              this.emit("gameStarted");
+              this.emit("gameStarting");
               break;
             }
             case "game_ended": {
               this.emit("gameEnded");
               break;
             }
+            case "game_state_update":
+              this.emit("gameStateUpdate", data);
             default:
               console.warn(`WARN unknown lobby event type ${event}`);
           }
@@ -190,6 +193,11 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
     const data = await server.DB.Lobbies.getSettings(id);
     const allPlayers = await server.DB.Lobbies.getPlayers(id);
     const result = new Lobby(server, id, data, allPlayers);
+    if (await server.DB.Lobbies.doWeHaveAGameState(id)) {
+      result.currentGame = await Game.create(CAHGame as any, server, result, {
+        gameLength: 10
+      });
+    }
     return result;
   }
 }
