@@ -14,6 +14,7 @@ interface LobbyEvents {
   playerJoined: Player;
   playerLeft: string;
   playerUpdated: Player;
+  gameEarlyStarting: void;
   gameStarting: void;
   gameEnded: void;
   gameStateUpdate: any;
@@ -79,7 +80,9 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
     }, PLAYER_DISCONNECT_KICK_TIMEOUT);
   }
 
-  public async playerLeft(playerId: string) {}
+  public async playerLeft(playerId: string) {
+    this.server.DB.Lobbies.removePlayer(this.id, playerId);
+  }
 
   public async attemptToStartGame(playerId: string, overrideNotReady = false) {
     const player = this.players.find(x => x.id === playerId);
@@ -96,13 +99,34 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
       throw new NotReadyException();
     }
     // TODO support other games
+    console.log("creating game");
     this.currentGame = await Game.create(CAHGame as any, this.server, this, {
       gameLength: 10
     });
-    this.server.DB.Lobbies.Events.gameStarting(this.id);
+    console.log("firing early starting");
+    this.server.DB.Lobbies.Events.gameEarlyStarting(this.id);
+    console.log("initializing initial state");
     await (this.currentGame as any).doUpdate(() => {
       return this.currentGame!.initialize();
     }, true);
+    console.log("firing start");
+    this.server.DB.Lobbies.Events.gameStarting(this.id);
+    console.log("initializing game");
+  }
+
+  public async initGame() {
+    if (this.currentGame !== null) {
+      throw new Error(
+        `Tried to initialize currentGame when it's already initialized!`
+      );
+    }
+    this.currentGame = await Game.create(CAHGame as any, this.server, this, {
+      gameLength: 10
+    });
+    const state = await this.server.DB.Lobbies.getGameState(this.id);
+    await (this.currentGame as any).doUpdate(() => {
+      return state;
+    });
   }
 
   public readyUp(playerId: string) {
@@ -134,7 +158,7 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
       `lobbies:${this.id}/*`,
       async (dataJson, channel) => {
         try {
-          console.log("lobby event", channel, typeof dataJson, dataJson);
+          console.log("Redis event", channel, typeof dataJson, dataJson);
           const data = JSON.parse(dataJson); // we json-stringify everything, so json-parse everything too
           const [_, event] = channel.split("/");
           switch (event) {
@@ -167,7 +191,17 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
               break;
             }
             case "game_starting": {
+              if (this.currentGame === null) {
+                console.log(
+                  "game_starting when we have no game instance, creating."
+                );
+                await this.initGame();
+              }
               this.emit("gameStarting");
+              break;
+            }
+            case "game_early_starting": {
+              this.emit("gameEarlyStarting");
               break;
             }
             case "game_ended": {
@@ -176,6 +210,7 @@ export class Lobby extends (EventEmitter as ({ new (): LobbyEmitter })) {
             }
             case "game_state_update":
               this.emit("gameStateUpdate", data);
+              break;
             default:
               console.warn(`WARN unknown lobby event type ${event}`);
           }

@@ -10,6 +10,12 @@ import ReactDOM from "react-dom";
 import { apiCall, ApiError } from "./api";
 import { Lobby } from "./lobby";
 
+(window as any).reset = function() {
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.search = "";
+}
+
 function Lobbies({ onJoin }: { onJoin: (sid: string) => any }) {
   const [playerName, setPlayerName] = useState("");
   const [joining, setJoining] = useState(false);

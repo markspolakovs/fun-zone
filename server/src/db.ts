@@ -15,6 +15,12 @@ function makeRandomCode(length = 4) {
   return str;
 }
 
+function r(op: string, cb: () => Promise<any>) {
+  return cb().catch(err => {
+    console.error(`ERROR in Redis op ${op}`, err);
+  });
+}
+
 export default class Database {
   constructor(private readonly redis: IHandyRedis) {}
 
@@ -22,52 +28,63 @@ export default class Database {
     Events: {
       // We JSON serialize EVERYTHING, for consistency, even simple strings.
       playerJoined: async (lobby: string, data: Player) => {
-        await this.redis.publish(
-          `lobbies:${lobby}/player_joined`,
-          serialize(data)
-        );
+        await r("playerJoined", async () => {
+          await this.redis.publish(
+            `lobbies:${lobby}/player_joined`,
+            serialize(data)
+          );
+        });
       },
       playerLeft: async (lobby: string, playerId: string) => {
-        await this.redis.publish(
-          `lobbies:${lobby}/player_left`,
-          serialize(playerId)
-        );
+        await r("playerLeft", async () => {
+          await this.redis.publish(
+            `lobbies:${lobby}/player_left`,
+            serialize(playerId)
+          );
+        });
       },
       playerUpdated: async (lobby: string, playerData: Partial<Player>) => {
-        await this.redis.publish(
-          `lobbies:${lobby}/player_updated`,
-          serialize(playerData)
-        );
+        await r("playerUpdated", async () => {
+          await this.redis.publish(
+            `lobbies:${lobby}/player_updated`,
+            serialize(playerData)
+          );
+        });
       },
       gameStarting: async (lobby: string) => {
         await this.redis.publish(`lobbies:${lobby}/game_starting`, "{}");
+      },
+      gameEarlyStarting: async (lobby: string) => {
+        await this.redis.publish(`lobbies:${lobby}/game_early_starting`, "{}");
       },
       gameEnded: async (lobby: string) => {
         await this.redis.publish(`lobbies:${lobby}/game_ended`, "{}");
       }
     },
     create: async (settings: any) => {
-      const lobbyId = (await this.redis.incr("id:lobbies")).toString(10);
-      await this.redis.sadd("lobbies", lobbyId);
-      const code = await this.Lobbies.allocateLobbyCode(lobbyId);
+      return await r("create game", async () => {
+        const lobbyId = (await this.redis.incr("id:lobbies")).toString(10);
+        await this.redis.sadd("lobbies", lobbyId);
+        const code = await this.Lobbies.allocateLobbyCode(lobbyId);
 
-      const lobbyData = {
-        code,
-        ...settings
-      };
-      await this.redis.set(
-        `lobbies:${lobbyId}:settings`,
-        JSON.stringify(lobbyData)
-      );
-      return {
-        id: lobbyId,
-        code,
-        settings
-      } as {
-        id: string;
-        code: string;
-        settings: any;
-      };
+        const lobbyData = {
+          code,
+          ...settings
+        };
+        await this.redis.set(
+          `lobbies:${lobbyId}:settings`,
+          JSON.stringify(lobbyData)
+        );
+        return {
+          id: lobbyId,
+          code,
+          settings
+        } as {
+          id: string;
+          code: string;
+          settings: any;
+        };
+      });
     },
     updatePlayer: async (
       lobby: string,

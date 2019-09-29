@@ -219,6 +219,7 @@ export default class GameSocket {
     });
     this.lobby!.on("gameStarting", () => {
       this.sendEvent(SocketEvents.GameStarting, {});
+      console.log("Socket got gameStarting");
       this.unsub = this.lobby!.currentGame!.subscribe(this.onGameStateUpdate);
     });
     this.lobby!.on("gameEnded", () => {

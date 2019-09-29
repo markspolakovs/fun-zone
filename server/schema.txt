@@ -60,6 +60,10 @@ lobbies:{id}/player_update PUBSUB
     Event Type: JSON
     The new date of the player - the `id` field must be included
 
+lobbies:{id}/game_early_starting PUBSUB
+    Event Type: none
+    For internal use only.
+
 lobbies:{id}/game_starting PUBSUB
     Event Type: none
     The game is starting. Expect a game_state_update with the initial state.
