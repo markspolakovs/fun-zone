@@ -32,7 +32,7 @@
     "express": "^4.17.1",
     "express-async-handler": "^1.1.4",
     "handy-redis": "^1.6.2",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "morgan": "^1.9.1",
     "node-redis-pubsub": "^4.0.0",
     "redis": "^2.8.0",
